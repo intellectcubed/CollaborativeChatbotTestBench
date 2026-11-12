@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chatbot driver</title>
+<style>
+  [hidden] { display: none !important; }
+  body { font: 14px system-ui, sans-serif; margin: 0; color: #222; }
+  header { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid #ccc; background: #fafafa; }
+  header .file { color: #555; }
+  .layout { display: grid; grid-template-columns: 16rem 1fr; min-height: calc(100vh - 3rem); }
+  aside { border-right: 1px solid #ddd; padding: 1rem; }
+  main { padding: 1rem; overflow: auto; }
+  button { font: inherit; padding: .35rem .7rem; margin: .15rem .2rem .15rem 0; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.danger { color: #b00; border: 1px solid #b00; background: #fff; }
+  label.block { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
+  input[type=date], select { font: inherit; padding: .3rem; }
+  .tabs { display: flex; gap: .3rem; border-bottom: 2px solid #ccc; margin-bottom: .8rem; }
+  .tabs button { margin: 0; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; background: #f4f4f4; }
+  .tabs button.on { background: #fff; font-weight: 700; border-color: #888; }
+  .status { color: #555; font-size: 12px; }
+  .warn { color: #a60; }
+  .err { color: #b00; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border-bottom: 1px solid #eee; padding: .3rem .4rem; text-align: left; vertical-align: top; }
+  td.text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 16rem; }
+  tbody tr { cursor: pointer; }
+  tr.current td { background: #cfe6ff; }
+  tr.sending td, tr.waiting td { background: #fff6e0; }
+  tr.failed td { background: #fde8e8; }
+  tr.done td.status-cell { color: #070; }
+  .replies { font-size: 12px; margin-top: .25rem; }
+  .replies div { background: #f6f6f6; padding: .25rem .4rem; border-radius: 4px; margin-top: .2rem; white-space: pre-wrap; }
+  .placeholder { color: #777; padding: 2rem 0; }
+  .botwrap { display: flex; flex-direction: column; height: calc(100vh - 7rem); }
+  .botcfg { border-bottom: 1px solid #ddd; padding-bottom: .5rem; max-height: 46vh; overflow: auto; }
+  .botcfg .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+  .botcfg textarea { width: 100%; font: inherit; box-sizing: border-box; }
+  .botcfg .chips label { display: inline-block; margin-right: .6rem; font-weight: normal; }
+  .botcfg .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .4rem 0; }
+  .convo { flex: 1 1 auto; overflow-y: auto; padding: .6rem .2rem; display: flex; flex-direction: column; gap: .5rem; min-height: 8rem; }
+  .msg { max-width: 72%; padding: .45rem .6rem; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.post { align-self: flex-start; color: #2e7d32; background: #eefaf0; border: 1px solid #bfe3c4; }
+  .msg.reply { align-self: flex-end; color: #1d4ed8; background: #eef4ff; border: 1px solid #c9d9ff; text-align: left; }
+  .msg .who { font-size: 11px; font-weight: 600; margin-bottom: .15rem; }
+  .msg .tid { font-size: 10px; color: #8a8a8a; margin-top: .25rem; }
+  .note { align-self: center; color: #666; font-size: 12px; font-style: italic; max-width: 90%; text-align: center; }
+  .note.stop { color: #7a4b00; font-style: normal; font-weight: 600; }
+  .judgepanel { flex: 0 0 14rem; border-top: 2px solid #ccc; display: flex; flex-direction: column; }
+  .judgepanel.collapsed { flex-basis: 2.2rem; }
+  .judgepanel.collapsed .jbody { display: none; }
+  .jhead { padding: .3rem .4rem; background: #fafafa; display: flex; gap: .6rem; align-items: center; }
+  .jbody { overflow-y: auto; padding: .4rem; font-size: 13px; }
+  .check { border: 1px solid #e3e3e3; border-radius: 6px; padding: .4rem .5rem; margin-bottom: .4rem; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; }
+  .tag.pass { background: #2e7d32; }
+  .tag.fail { background: #9a4a00; }
+  .tag.unclear { background: #6b6b6b; }
+  .tag.pending { background: #9aa5b1; }
+  .check .ev { color: #444; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <b>Chatbot driver</b>
+  <span class="file" id="fileName">no file open</span>
+  <span class="status" id="runState"></span>
+</header>
+<div class="layout">
+  <aside>
+    <label class="block">Batch file</label>
+    <input type="file" id="openFile" accept=".jsonl,.json,application/json">
+    <div class="status" id="openMsg"></div>
+
+    <label class="block"><input type="checkbox" id="live"> Live calendar <span class="status">(off: preview only)</span></label>
+
+    <label class="block">Run</label>
+    <button id="runAll">Run all checked</button><br>
+    <button id="runCurrent">Run</button><br>
+    <label class="block">Filter</label>
+    <label class="block">From <input type="date" id="from"></label>
+    <label class="block">To <input type="date" id="to"></label>
+    <button id="filter">Filter</button><button id="clearFilter">Clear</button>
+    <div class="status" id="filterMsg"></div><br>
+    <label class="block">Control</label>
+    <button id="pause">Pause</button>
+    <button id="resume">Resume</button>
+    <button id="stop" class="danger">Stop</button><br>
+    <button id="reset">Mark all pending</button>
+    <div class="status" id="ctlMsg"></div>
+  </aside>
+  <main>
+    <nav class="tabs">
+      <button data-tab="batch" class="on">Batch</button>
+      <button data-tab="create">Create</button>
+      <button data-tab="bot">Bot</button>
+    </nav>
+    <section id="tab-batch">
+      <div class="status" id="batchInfo"></div>
+      <div class="status">Click a row to select it (blue). Run sends the selected row, then selects the next one.</div>
+      <div id="warnings" class="warn"></div>
+      <table id="lines"><thead><tr>
+        <th>Run</th><th>When (New York)</th><th>Name</th><th>Squad</th><th>Message</th><th>Status</th><th>Chatbot</th>
+      </tr></thead><tbody></tbody></table>
+      <p class="placeholder" id="empty">Open a batch file to see its messages.</p>
+    </section>
+    <section id="tab-create" hidden><p class="placeholder">Create is not built yet.</p></section>
+    <section id="tab-bot" hidden class="botwrap">
+  <div class="botcfg">
+    <div class="row">
+      <label>Goal file <select id="bGoalSel"></select></label>
+      <button id="bLoad">Load goal</button>
+      <label>Name <input id="bName" placeholder="lower_case_name"></label>
+      <button id="bSave">Save goal</button>
+      <span class="status" id="bMsg"></span>
+    </div>
+    <div class="grid">
+      <div>
+        <label class="block">Goal: what to try</label>
+        <textarea id="bGoal" rows="3"></textarea>
+        <label class="block">Stop when</label>
+        <textarea id="bStop" rows="2"></textarea>
+        <label class="block">Expected results <span class="status">(judge only, one per line)</span></label>
+        <textarea id="bExpect" rows="3"></textarea>
+      </div>
+      <div>
+        <label class="block">My squad (writes first)</label>
+        <select id="bMine"></select>
+        <label class="block">Personas the bot may write as</label>
+        <div id="bPersonas" class="chips"></div>
+        <label class="block">Window <input type="date" id="bWStart"> to <input type="date" id="bWEnd"></label>
+        <label class="block">Gate date <input type="date" id="bGate"></label>
+        <label class="block">Noise <select id="bNoise"><option>none</option><option>some</option><option>heavy</option></select></label>
+        <label class="block">Posting allowed</label>
+        <div id="bPost" class="chips"></div>
+        <label class="block"><input type="checkbox" id="bSetup"> setup changes allowed</label>
+        <label class="block"><input type="checkbox" id="bLive"> live calendar (test calendar only)</label>
+      </div>
+      <div>
+        <label class="block">Tester model</label>
+        <select id="bTModel"></select> temp <input id="bTTemp" size="4">
+        <label class="block">Judge model</label>
+        <select id="bJModel"></select> temp <input id="bJTemp" size="4">
+        <label class="block">Max messages <input id="bMax" size="4"> max turns <input id="bTurns" size="4"></label>
+        <label class="block">Reply timeout (s) <input id="bTimeout" size="4"> max cost (USD) <input id="bCost" size="4"></label>
+        <div class="status" id="bBudget"></div>
+      </div>
+    </div>
+    <div class="row">
+      <button id="bGo">Go</button>
+      <button id="bStopBtn" class="danger">Stop</button>
+      <span class="status" id="bState"></span>
+    </div>
+  </div>
+  <div class="convo" id="bConvo"><div class="placeholder" id="bEmpty">Load a goal and press Go. The conversation appears here.</div></div>
+  <div class="judgepanel">
+    <div class="jhead"><b>Judge</b> <span class="status" id="bJSum"></span>
+      <button id="bJToggle">Collapse</button></div>
+    <div class="jbody" id="bJBody"></div>
+  </div>
+</section>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+async function call(path, method = "GET", body) {
+  const r = await fetch(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(Array.isArray(data.detail) ? data.detail.join("; ") : (data.detail || r.status));
+  return data;
+}
+
+// ---- tabs
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  for (const t of ["batch", "create", "bot"]) $("tab-" + t).hidden = b.dataset.tab !== t;
+});
+
+// ---- open a file: the browser reads it, the driver parses and checks it
+$("openFile").onchange = async () => {
+  const file = $("openFile").files[0];
+  if (!file) return;
+  $("openMsg").textContent = "opening...";
+  try {
+    const content = await file.text();
+    const r = await call("/api/batch/open", "POST", { name: file.name.replace(/\.[^.]+$/, ""), content });
+    $("openMsg").textContent = `opened ${r.messages} messages`;
+    clearFilter();
+    $("warnings").innerHTML = r.warnings.map(w => `<div>${esc(w)}</div>`).join("");
+    await refresh();
+  } catch (e) {
+    $("openMsg").innerHTML = `<span class="err">not opened: ${esc(e.message)}</span>`;
+  }
+};
+
+// ---- controls
+async function act(path, body) {
+  try { await call(path, "POST", body); $("ctlMsg").textContent = ""; }
+  catch (e) { $("ctlMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  await refresh();
+  schedulePoll();
+}
+// ---- Run all checked: the page runs the rows one at a time, each as its own Run request.
+// It starts at the highlighted row and goes down, through the rows the filter shows that are checked and pending.
+let runLoop = false, stopRequested = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function inFilter(ln) {
+  const day = ln.when.slice(0, 10);
+  return (!filter.from || day >= filter.from) && (!filter.to || day <= filter.to);
+}
+async function waitWhileBusy() {
+  for (;;) {
+    await refresh();  // brings in the rows that changed, and the state
+    if (!busyNow()) return;
+    await sleep(1000);
+  }
+}
+async function runAllChecked() {
+  runLoop = true;
+  stopRequested = false;
+  try {
+    await refresh();
+    const from = lastStatus.current ?? 0;
+    const todo = rows.filter(Boolean).filter(ln => ln.index >= from && ln.checked && ln.status === "pending" && inFilter(ln)).map(ln => ln.index);
+    if (!todo.length) {
+      $("ctlMsg").innerHTML = `<span class="err">nothing to run: no checked, pending lines from the highlighted row on, in the filter</span>`;
+      return;
+    }
+    for (const index of todo) {
+      if (stopRequested) break;
+      await call("/api/batch/select", "POST", { index });
+      await call("/api/batch/run", "POST", { mode: "current", live: $("live").checked });
+      await waitWhileBusy();
+    }
+  } catch (e) {
+    $("ctlMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    runLoop = false;
+    await refresh();
+  }
+}
+$("runAll").onclick = runAllChecked;
+$("runCurrent").onclick = () => act("/api/batch/run", { mode: "current", live: $("live").checked });
+
+// ---- filter: shows only the lines whose New York date is in the range. It does not change what runs.
+let filter = { from: "", to: "" };  // applied range, YYYY-MM-DD; blank means no limit
+function clearFilter() {
+  $("from").value = "";
+  $("to").value = "";
+  filter = { from: "", to: "" };
+  $("filterMsg").textContent = "";
+}
+$("filter").onclick = () => {
+  const from = $("from").value, to = $("to").value;
+  if (!from && !to) { $("filterMsg").innerHTML = `<span class="err">choose a From or To date</span>`; return; }
+  if (from && to && from > to) { $("filterMsg").innerHTML = `<span class="err">From is after To</span>`; return; }
+  filter = { from, to };
+  $("filterMsg").textContent = "";
+  refresh();
+};
+$("clearFilter").onclick = () => { clearFilter(); refresh(); };
+$("pause").onclick = () => act("/api/batch/pause");
+$("resume").onclick = () => act("/api/batch/resume");
+$("stop").onclick = () => { stopRequested = true; act("/api/batch/stop"); };
+$("reset").onclick = () => act("/api/batch/reset");
+
+// ---- the table: checkbox per line, status, and the chatbot's replies
+function rowHtml(ln, current) {
+  const replies = ln.replies.length
+    ? `<div class="replies">${ln.replies.map(r => `<div><b>${esc(r.kind)}</b> → ${esc(r.channel)} (${esc(r.status)})${r.error ? " · " + esc(r.error) : ""}<br>${esc(r.text)}</div>`).join("")}</div>`
+    : "";
+  const trace = ln.trace_id ? `<div class="status">trace ${esc(ln.trace_id.slice(0, 8))} · ${esc(ln.trace_status || "")}</div>` : "";
+  const err = ln.error ? `<div class="err">${esc(ln.error)}</div>` : "";
+  const state = ln.status === "done" && !ln.replies.length ? "done (no reply)" : ln.status;
+  const cls = [ln.status, ln.index === current ? "current" : ""].filter(Boolean).join(" ");
+  return `<tr class="${esc(cls)}" data-index="${ln.index}"><td><input type="checkbox" data-line="${ln.index}" ${ln.checked ? "checked" : ""}></td>` +
+    `<td>${esc(ln.display_time)}</td><td>${esc(ln.name)}<br><span class="status">${esc(ln.member)}</span></td><td>${esc(ln.squad)}</td>` +
+    `<td class="text">${esc(ln.text)}</td><td class="status-cell">${esc(state)}${trace}${err}</td><td>${replies}</td></tr>`;
+}
+// ---- the view. The driver keeps the rows; the page keeps its own copy and asks only for the rows that changed.
+// It polls only while a run is going. Otherwise it asks once, after each action.
+let batchId = null, version = -1, rows = [], lastStatus = null, drawn = "", pollTimer = null;
+const busyNow = () => !!lastStatus && (lastStatus.state === "running" || lastStatus.state === "paused");
+async function refresh() {
+  let s;
+  try { s = await call(`/api/batch?since=${version}`); } catch (e) { return; }
+  if (s.batch_id !== batchId) {  // another batch, or none: start the copy again
+    batchId = s.batch_id;
+    version = -1;
+    rows = [];
+    try { s = await call("/api/batch?since=-1"); } catch (e) { return; }
+  }
+  for (const ln of s.lines) rows[ln.index] = ln;
+  version = s.version;
+  lastStatus = s;
+  render();
+}
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (!busyNow()) return;
+  pollTimer = setTimeout(async () => { await refresh(); schedulePoll(); }, 1000);
+}
+function render() {
+  const s = lastStatus;
+  const all = rows.filter(Boolean);
+  const shown = all.filter(inFilter);
+  $("runState").textContent = s.state === "none" ? "" : `${s.state}${s.live ? " · LIVE calendar" : " · preview only"}`;
+  $("fileName").textContent = s.name ? `${s.name}.jsonl` : "no file open";
+  $("empty").hidden = all.length > 0;
+  const filtering = filter.from || filter.to;
+  $("batchInfo").textContent = s.name ? (filtering ? `showing ${shown.length} of ${s.total} messages` : `${s.total} messages`) + ` · ${s.pending} checked and pending` + (s.description ? ` · ${s.description}` : "") : "";
+  const html = shown.map(ln => rowHtml(ln, s.current)).join("");
+  if (html !== drawn) {
+    drawn = html;
+    $("lines").querySelector("tbody").innerHTML = html;
+    // a click on a row (not its check box) selects it; Run sends it
+    document.querySelectorAll("#lines tbody tr").forEach(tr => tr.onclick = e => {
+      if (e.target.closest("input")) return;
+      act("/api/batch/select", { index: Number(tr.dataset.index) });
+    });
+    document.querySelectorAll("#lines input[data-line]").forEach(cb => cb.onchange = async () => {
+      try { await call(`/api/batch/lines/${cb.dataset.line}`, "POST", { checked: cb.checked }); }
+      catch (e) { cb.checked = !cb.checked; $("ctlMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    });
+  }
+  const busy = busyNow();
+  $("runAll").disabled = busy || runLoop || botBusyNow || !s.name;
+  $("reset").disabled = busy || runLoop || botBusyNow || !s.name;
+  $("runCurrent").disabled = busy || runLoop || botBusyNow || s.current === null || s.current === undefined;
+  $("pause").disabled = s.state !== "running";
+  $("resume").disabled = s.state !== "paused";
+  $("stop").disabled = !busy;
+}
+// A fresh page starts with no batch shown. If a run is still going on the server, it is kept and shown.
+async function startFresh() {
+  try { await call("/api/batch/close", "POST"); } catch (e) { /* a run is going: show it */ }
+  await refresh();
+  schedulePoll();
+}
+startFresh();
+// ---- the Bot tab: goal file, Go/Stop, the conversation, and the judge's panel
+const MODELS = ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"];
+const SETTINGS = ["wait", "thread", "none", "sync"];
+let botSince = 0, botRun = "", botPoll = null, botBusyNow = false;
+
+function fillSelect(id, values, chosen) {
+  $(id).innerHTML = values.map(v => `<option${v === chosen ? " selected" : ""}>${esc(v)}</option>`).join("");
+}
+function chipBoxes(id, values, checked, name) {
+  $(id).innerHTML = values.map(v => `<label><input type="checkbox" name="${name}" value="${esc(v)}"${checked.includes(v) ? " checked" : ""}> ${esc(v)}</label>`).join("");
+}
+function checkedValues(name) { return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value); }
+
+async function loadRoster() {
+  const roster = await call("/api/roster");
+  const pseudonyms = roster.map(r => r.member);
+  fillSelect("bMine", pseudonyms, pseudonyms[0]);
+  chipBoxes("bPersonas", pseudonyms.map(p => p), [pseudonyms[0]], "persona");
+  // squad shown beside each persona, from the roster
+  $("bPersonas").querySelectorAll("label").forEach((lab, i) => lab.title = `squad ${roster[i].squad}`);
+  chipBoxes("bPost", SETTINGS, SETTINGS, "post");
+  fillSelect("bTModel", MODELS, "claude-sonnet-5-5");
+  fillSelect("bJModel", MODELS, "claude-opus-5-5");
+}
+
+function defaultGoal() {
+  return { name: "", goal: "", stop_condition: "", expected_results: [], my_squad: "", personas: [],
+    window: { start: "", end: "" }, gate_date: "", noise: "none", posting_allowed: SETTINGS.slice(),
+    setup_allowed: false, live: false, models: { tester: "claude-sonnet-5-5", judge: "claude-opus-5-5" },
+    temperature: { tester: 0.7, judge: 0 }, limits: { max_messages: 12, max_turns: 30, reply_timeout_s: 120, max_cost_usd: 0.5 } };
+}
+
+function showGoal(g) {
+  $("bName").value = g.name || "";
+  $("bGoal").value = g.goal || "";
+  $("bStop").value = g.stop_condition || "";
+  $("bExpect").value = (g.expected_results || []).join("\n");
+  fillSelect("bMine", [...$("bMine").options].map(o => o.value), g.my_squad);
+  chipBoxes("bPersonas", [...document.querySelectorAll("input[name='persona']")].map(i => i.value), g.personas || [], "persona");
+  $("bWStart").value = g.window?.start || ""; $("bWEnd").value = g.window?.end || "";
+  $("bGate").value = g.gate_date || ""; $("bNoise").value = g.noise || "none";
+  chipBoxes("bPost", SETTINGS, g.posting_allowed || SETTINGS, "post");
+  $("bSetup").checked = !!g.setup_allowed; $("bLive").checked = !!g.live;
+  fillSelect("bTModel", MODELS, g.models?.tester); fillSelect("bJModel", MODELS, g.models?.judge);
+  $("bTTemp").value = g.temperature?.tester ?? 0.7; $("bJTemp").value = g.temperature?.judge ?? 0;
+  $("bMax").value = g.limits?.max_messages ?? 12; $("bTurns").value = g.limits?.max_turns ?? 30;
+  $("bTimeout").value = g.limits?.reply_timeout_s ?? 120; $("bCost").value = g.limits?.max_cost_usd ?? 0.5;
+}
+
+function readGoal() {
+  const personas = checkedValues("persona");
+  const mine = $("bMine").value;
+  if (!personas.includes(mine)) personas.unshift(mine);
+  return {
+    name: $("bName").value.trim(), goal: $("bGoal").value.trim(), stop_condition: $("bStop").value.trim(),
+    expected_results: $("bExpect").value.split("\n").map(s => s.trim()).filter(Boolean),
+    my_squad: mine, personas, window: { start: $("bWStart").value, end: $("bWEnd").value },
+    gate_date: $("bGate").value, noise: $("bNoise").value, posting_allowed: checkedValues("post"),
+    setup_allowed: $("bSetup").checked, live: $("bLive").checked,
+    models: { tester: $("bTModel").value, judge: $("bJModel").value },
+    temperature: { tester: parseFloat($("bTTemp").value), judge: parseFloat($("bJTemp").value) },
+    limits: { max_messages: parseInt($("bMax").value), max_turns: parseInt($("bTurns").value),
+      reply_timeout_s: parseFloat($("bTimeout").value), max_cost_usd: parseFloat($("bCost").value) },
+  };
+}
+
+async function refreshGoalList(selected) {
+  const names = await call("/api/bot/goals");
+  fillSelect("bGoalSel", names.length ? names : ["(none saved)"], selected || names[0]);
+}
+
+$("bLoad").onclick = async () => {
+  try { showGoal(await call(`/api/bot/goals/${encodeURIComponent($("bGoalSel").value)}`)); $("bMsg").textContent = "loaded"; }
+  catch (e) { $("bMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+$("bSave").onclick = async () => {
+  const g = readGoal();
+  const name = g.name || "untitled";
+  try {
+    await call(`/api/bot/goals/${encodeURIComponent(name)}`, "PUT", { ...g, name });
+    $("bMsg").textContent = `saved ${name}`;
+    await refreshGoalList(name);
+  } catch (e) { $("bMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+
+function tid(id) { return id ? `<div class="tid">trace ${esc(String(id).slice(0, 8))}</div>` : ""; }
+function renderEvent(ev) {
+  switch (ev.kind) {
+    case "post":
+      return `<div class="msg post"><div class="who">${esc(ev.name || ev.persona)}${ev.sender_id ? ` (${esc(ev.sender_id)})` : ""} · squad ${esc(ev.squad)} · ${esc(ev.setting)}</div>${esc(ev.text)}${ev.warning ? `<div class="tid">${esc(ev.warning)}</div>` : ""}${tid(ev.trace_id)}</div>`;
+    case "reply":
+      return `<div class="msg reply"><div class="who">chatbot · ${esc(ev.reply_kind || "")} · ${esc(ev.channel || "")} · ${esc(ev.status || "")}</div>${esc(ev.text)}${ev.error ? `<div class="tid">${esc(ev.error)}</div>` : ""}${tid(ev.trace_id)}</div>`;
+    case "plan": return `<div class="note">Plan: ${esc(ev.text)}</div>`;
+    case "snapshot": return `<div class="note">judge took the ${esc(ev.label)} image for ${esc((ev.dates || []).join(", ") || "no days")}</div>`;
+    case "setup": return `<div class="note">setup ${esc(ev.action)} ${esc(ev.date)} ${esc(ev.start)}-${esc(ev.end)} squad ${esc(ev.squad)}${ev.live ? "" : " (preview)"}</div>`;
+    case "finish": return `<div class="note stop">tester finished: ${ev.passed ? "passed" : "not passed"}. ${esc(ev.reason)}</div>`;
+    case "stop": return `<div class="note stop">run stopped: ${esc(ev.reason)}</div>`;
+    case "note": return `<div class="note">${esc(ev.text)}</div>`;
+    case "tool": return `<div class="note">${esc(ev.name)} ${esc(ev.date || "")}</div>`;
+    default: return "";
+  }
+}
+
+function renderJudge(s) {
+  const verdicts = Object.fromEntries((s.verdicts || []).map(v => [v.id, v]));
+  const checks = s.checks || [];
+  const counts = { pass: 0, fail: 0, unclear: 0 };
+  for (const v of s.verdicts || []) counts[v.verdict] = (counts[v.verdict] || 0) + 1;
+  $("bJSum").textContent = checks.length ? `${checks.length} checks · passed ${counts.pass}, failed ${counts.fail}, unclear ${counts.unclear}` : (s.state === "running" ? "waiting for the judge" : "");
+  const plan = s.plan ? `<div class="check"><b>Plan</b><div class="ev">${esc(s.plan)}</div></div>` : "";
+  const rows = checks.map(c => {
+    const v = verdicts[c.id];
+    const tag = v ? `<span class="tag ${esc(v.verdict)}">${esc(v.verdict)}</span>` : `<span class="tag pending">before the run</span>`;
+    return `<div class="check">${tag} <b>${esc(c.id)}</b> ${esc(c.check)}` +
+      (v ? `<div class="ev">evidence: ${esc(v.evidence)}\nreason: ${esc(v.reason)}</div>` : "") + `</div>`;
+  });
+  const summary = s.verdict_summary ? `<div class="check"><b>Summary</b> ${esc(s.verdict_summary)}</div>` : "";
+  $("bJBody").innerHTML = plan + rows.join("") + summary;
+}
+
+function renderRunState(s) {
+  const busy = s.state === "running";
+  botBusyNow = busy;
+  const spent = s.budget_cap_usd != null ? `budget $${(s.budget_spent_usd || 0).toFixed(2)} of $${s.budget_cap_usd.toFixed(2)} · this run $${(s.run_spent_usd || 0).toFixed(4)}` : "no API key set";
+  $("bBudget").textContent = spent;
+  $("bState").textContent = s.state === "idle" ? "idle" : `${s.state}${s.reason ? ` · ${s.reason}` : ""}${s.run ? ` · ${s.run}` : ""}`;
+  $("bGo").disabled = busy || runLoop || busyNow() || s.budget_cap_usd == null;
+  $("bStopBtn").disabled = !busy;
+  $("bSave").disabled = busy;
+}
+
+async function pollBot() {
+  let s;
+  try { s = await call(`/api/bot/status?since=${botSince}`); } catch (e) { return; }
+  if (s.run !== botRun) {  // a new run: start the conversation again
+    botRun = s.run; botSince = 0;
+    document.querySelectorAll("#bConvo .msg, #bConvo .note").forEach(n => n.remove());  // keep the placeholder
+    s = await call(`/api/bot/status?since=0`);
+  }
+  const convo = $("bConvo");
+  const html = s.events.map(renderEvent).join("");
+  if (html) {
+    convo.insertAdjacentHTML("beforeend", html);
+    convo.scrollTop = convo.scrollHeight;
+  }
+  botSince = s.next;
+  if ($("bEmpty")) $("bEmpty").hidden = botSince > 0;
+  renderJudge(s);
+  renderRunState(s);
+  if (s.state === "running") botPoll = setTimeout(pollBot, 1000);
+  else botPoll = null;
+}
+function startBotPoll() { clearTimeout(botPoll); pollBot(); }
+
+$("bGo").onclick = async () => {
+  const g = readGoal();
+  try {
+    await call("/api/bot/go", "POST", g);
+    $("bMsg").textContent = "";
+    startBotPoll();
+  } catch (e) { $("bMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+$("bStopBtn").onclick = async () => {
+  try { await call("/api/bot/stop", "POST"); } catch (e) { $("bMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  startBotPoll();
+};
+$("bJToggle").onclick = () => {
+  const p = document.querySelector(".judgepanel");
+  p.classList.toggle("collapsed");
+  $("bJToggle").textContent = p.classList.contains("collapsed") ? "Expand" : "Collapse";
+};
+
+(async function startBot() {
+  await loadRoster();
+  await refreshGoalList();
+  showGoal(defaultGoal());
+  startBotPoll();
+})();
+</script>
+</body>
+</html>

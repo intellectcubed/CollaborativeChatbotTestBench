@@ -1,0 +1,24 @@
+services:
+  driver:
+    build: .
+    # Development: ./src is mounted, and uvicorn reloads when a file changes. No rebuild for code edits.
+    command: ["uvicorn", "driver.web.app:app", "--app-dir", "/app/src", "--host", "0.0.0.0", "--port", "8000", "--reload",
+              "--reload-dir", "/app/src"]
+    ports:
+      - "8010:8000"   # 8000 is the chatbot's ingest on the host
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REPLAY_URL: ${REPLAY_URL:-http://host.docker.internal:8001}
+      CALENDAR_TEST_URL: ${CALENDAR_TEST_URL:-http://host.docker.internal:7007}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach the chatbot's replay tool and test calendar on this machine
+    volumes:
+      - ./src:/app/src                        # code: edits apply on the next request
+      - ./batches:/app/batches                # saved batch files
+      - ./scenarios:/app/scenarios            # agent scenario files
+      - ./runs:/app/runs                      # run output
+      - ./prompts:/app/prompts                # bot and judge prompts (edit and they apply on the next run)
+      - ./config:/app/config                  # model prices (config/model_prices.json)
+    restart: unless-stopped

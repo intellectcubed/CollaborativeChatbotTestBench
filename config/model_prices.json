@@ -1,0 +1,6 @@
+{
+  "_note": "Prices in US dollars per million tokens. Fill these in from the provider's price list before a run: a model with no price is refused, so no cost is guessed.",
+  "claude-opus-5-5": {"input_per_mtok": 4, "output_per_mtok": 20},
+  "claude-sonnet-5-5": {"input_per_mtok": 2, "output_per_mtok": 10},
+  "claude-haiku-5-5": {"input_per_mtok": 0.5, "output_per_mtok": 2.50}
+}

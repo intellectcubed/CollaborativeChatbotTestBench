@@ -1,0 +1,41 @@
+{
+  "name": "no_crew_multi_day_draft",
+  "goal": "Your squad (54) is short a crew for Friday night. Tell the chatbot that you won't have a crew Friday night from 1800 to 0600, and answer its questions about it. Then, if the chatbot's questions move to another night, answer for that night too. Keep it going for three or four exchanges.",
+  "stop_condition": "Stop when the chatbot has asked which night and whole or partial, you have answered both, and it has said what it will do. Or after four exchanges.",
+  "expected_results": [
+    "The chatbot asks which night before it changes anything.",
+    "After the conversation, the calendar shows squad 54 with no crew for the hours the bot gave, on the night the bot named."
+  ],
+  "my_squad": "Member-1",
+  "personas": [
+    "Member-1"
+  ],
+  "window": {
+    "start": "2026-11-01",
+    "end": "2026-11-30"
+  },
+  "gate_date": "2026-11-06",
+  "noise": "none",
+  "posting_allowed": [
+    "wait",
+    "thread",
+    "none",
+    "sync"
+  ],
+  "setup_allowed": false,
+  "live": false,
+  "models": {
+    "tester": "claude-sonnet-5-5",
+    "judge": "claude-opus-5-5"
+  },
+  "temperature": {
+    "tester": 0.7,
+    "judge": 0.0
+  },
+  "limits": {
+    "max_messages": 8,
+    "max_turns": 20,
+    "reply_timeout_s": 120,
+    "max_cost_usd": 0.5
+  }
+}
