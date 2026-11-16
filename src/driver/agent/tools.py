@@ -7,11 +7,11 @@ adjust. The one exception is Stopped, which ends the run and is allowed to propa
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from driver.agent.run_state import RunContext, Stopped
-from driver.api.replay import WORKING, ReplayError
+from driver.api.replay import WORKING, ReplayError, model_tokens
 from driver.calendar_test import CalendarError, GuardRefused, day_schedule
 
 NY = ZoneInfo("America/New_York")
@@ -44,21 +44,23 @@ def _parse_when(text: str) -> datetime:
 
 # ---- posting and reading the chat
 
-def _wait_for(ctx: RunContext, deps: Deps, trace_id: str) -> tuple[str, list[dict]]:
+def _wait_for(ctx: RunContext, deps: Deps, trace_id: str) -> tuple[str, list[dict], dict | None]:
+    """The trace's final status, its outbox rows, and the chatbot's model tokens for it (None while unfinished)."""
     deadline = time.monotonic() + ctx.reply_timeout_s
     status = "enqueued"
     while True:
         ctx.check_stop()
-        status = deps.replay.trace(trace_id).get("status", "unknown")
+        trace = deps.replay.trace(trace_id)
+        status = trace.get("status", "unknown")
         if status not in WORKING:
             break
         if time.monotonic() > deadline:
-            return "still processing", []
+            return "still processing", [], None
         time.sleep(deps.poll_s)
     while True:
         rows = deps.replay.outbox(trace_id)
         if not any(r.get("status") in FINAL_REPLY_STATUSES for r in rows) or time.monotonic() > deadline:
-            return status, rows
+            return status, rows, model_tokens(trace)
         time.sleep(deps.poll_s)
 
 
@@ -80,6 +82,11 @@ def post_message(ctx: RunContext, deps: Deps, inp: dict) -> dict:
         when = _parse_when(inp.get("sent_at") or "")
     except ValueError:
         return _err("sent_at must be an ISO 8601 time, for example 2026-11-04T18:30:00-05:00")
+    spaced = False
+    if ctx.time_between_min and ctx.last_sent is not None and when.date() == ctx.last_sent.date():
+        # Time Between: on the same day the driver sets the time. A later day starts again from the bot's time.
+        when = ctx.last_sent + timedelta(minutes=ctx.time_between_min)
+        spaced = True
     if not ctx.window_start <= when.date() <= ctx.window_end:
         return _err(f"sent_at is outside the window {ctx.window_start} to {ctx.window_end}")
     if ctx.messages_posted >= ctx.max_messages:
@@ -91,25 +98,34 @@ def post_message(ctx: RunContext, deps: Deps, inp: dict) -> dict:
     except (ReplayError, KeyError) as exc:
         return _err(f"send refused: {exc}")
     ctx.messages_posted += 1
+    ctx.last_sent = when
     trace_id = sent.get("trace_id")
     ctx.emit("post", persona=member, name=deps.names.get(member, ""), sender_id=deps.sender_ids[member],
              squad=ctx.personas[member], text=text, setting=setting,
              sent_at=when.isoformat(), trace_id=trace_id, send_status=sent.get("status"), warning=warning)
+    if sent.get("status") != "enqueued" and setting != "none" and trace_id:
+        # not taken (dropped, ignored, ...): the turn is over, with no message. The page shows the reply's title alone.
+        ctx.emit("reply", trace_id=trace_id, text="", no_message=True, trace_status=sent.get("status"))
     if sent.get("status") != "enqueued" or setting == "none":
         return {"trace_id": trace_id, "status": sent.get("status"), "replies": [],
                 "note": "not waiting for a reply" if setting == "none" else "the chatbot did not take this message",
                 **({"warning": warning} if warning else {})}
     try:
-        final, rows = _wait_for(ctx, deps, trace_id)
+        final, rows, tokens = _wait_for(ctx, deps, trace_id)
     except ReplayError as exc:
         return _err(f"could not read the reply: {exc}")
     replies = []
-    for row in rows:
+    if final != "still processing" and not any((r.get("text") or "").strip() for r in rows):
+        ctx.emit("reply", trace_id=trace_id, text="", no_message=True, trace_status=final,  # finished, nothing said
+                 tokens=tokens)
+        rows = []
+    for n, row in enumerate(rows):
         reply = {"reply_kind": row.get("kind"), "text": ctx.scrub(row.get("text") or ""),
                  "channel": row.get("channel"), "status": row.get("status"), "error": row.get("error")}
-        replies.append(reply)
-        ctx.emit("reply", trace_id=trace_id, **reply)
+        replies.append(reply)  # the tester sees the reply; the token counts are for the page only
+        ctx.emit("reply", trace_id=trace_id, tokens=tokens if n == 0 else None, **reply)
     return {"trace_id": trace_id, "status": final, "replies": replies,
+            **({"sent_at": when.isoformat()} if spaced else {}),
             **({"warning": warning} if warning else {})}
 
 

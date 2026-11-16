@@ -37,6 +37,8 @@ class RunContext:
     max_cost_usd: float
     reply_timeout_s: float
     real_names: dict  # real name -> pseudonym; used only by scrub
+    time_between_min: float = 0.0  # within a day, each post is sent this long after the one before; 0: the bot decides
+    last_sent: datetime | None = None
     events: list = field(default_factory=list)
     snapshots: dict = field(default_factory=dict)  # (label, iso date) -> raw calendar answer
     days: set = field(default_factory=set)  # iso dates in question

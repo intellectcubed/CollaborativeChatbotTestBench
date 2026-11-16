@@ -88,6 +88,8 @@ def transcript_text(ctx: RunContext) -> str:
         if ev["kind"] == "post":
             lines.append(f"[post as {ev['persona']} ({ev['squad']}), setting {ev['setting']}, sent_at {ev['sent_at']}, "
                          f"trace {ev['trace_id']}] {ctx.scrub(ev['text'])}")
+        elif ev["kind"] == "reply" and ev.get("no_message"):
+            lines.append(f"[chatbot finished trace {ev['trace_id']} ({ev.get('trace_status')}) with no message]")
         elif ev["kind"] == "reply":
             lines.append(f"[chatbot reply, trace {ev['trace_id']}, {ev['reply_kind']} via {ev['channel']}, {ev['status']}] "
                          f"{ev['text']}")
@@ -158,6 +160,7 @@ class BotManager:
                     max_cost_usd=float(goal["limits"]["max_cost_usd"]),
                     reply_timeout_s=float(goal["limits"]["reply_timeout_s"]),
                     real_names=real_name_map(members),
+                    time_between_min=float(goal.get("time_between_min") or 0),
                 )
                 ctx.days.add(ctx.gate.isoformat())
             except Exception:
@@ -195,13 +198,21 @@ class BotManager:
 
     def _tester_system(self, goal: dict, ctx: RunContext) -> str:
         personas = "; ".join(f"{p} (squad {s})" for p, s in ctx.personas.items())
+        gap = ctx.time_between_min
+        spacing = (f"Time between messages: {gap:g} minutes. Within a day the driver sets each sent_at to the previous "
+                   "post plus this gap, whatever time you give. To move to a later day, give that day and its first "
+                   "time." if gap else "Time between messages: you choose each sent_at.")
+        if len(ctx.personas) > 1 and len(set(ctx.personas.values())) == 1:  # Many: several members of one squad
+            spacing += (" Take turns among the personas, as members of one squad would: one may say something and "
+                        "another comment on it or finish the thought.")
         run = (f"## This run\n\n"
                f"Personas you may write as (pseudonyms only): {personas}. My squad: {goal['my_squad']}.\n"
                f"Window: {ctx.window_start} to {ctx.window_end}. Gate date (the day the request is about): {ctx.gate}.\n"
                f"Posting settings allowed: {', '.join(sorted(ctx.posting_allowed))}. "
                f"Setup changes allowed: {'yes' if ctx.setup_allowed else 'no'}. "
                f"Live calendar: {'yes' if ctx.live else 'no'}.\n"
-               f"Noise: {NOISE_TEXT[goal['noise']]}\n\n"
+               f"Noise: {NOISE_TEXT[goal['noise']]}\n"
+               f"{spacing}\n\n"
                f"Goal: {goal['goal']}\n\nStop when: {goal['stop_condition']}\n")
         return self._system("system.md", "domain.md", "chat_conventions.md") + "\n\n---\n\n" + run
 

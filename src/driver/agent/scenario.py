@@ -27,6 +27,7 @@ def default_goal() -> dict:
         "models": {"tester": "claude-sonnet-5-5", "judge": "claude-opus-5-5"},
         "temperature": {"tester": 0.7, "judge": 0.0},
         "limits": dict(DEFAULT_LIMITS),
+        "time_between_min": 5,
     }
 
 
@@ -52,6 +53,9 @@ def validate(goal: dict) -> list[str]:
         errors.append("gate date: the day the request is about")
     if not goal.get("expected_results"):
         errors.append("expected results: at least one, for the judge")
+    gap = goal.get("time_between_min", 0)
+    if not isinstance(gap, (int, float)) or isinstance(gap, bool) or gap < 0:
+        errors.append("time between: minutes, 0 or more")
     if not goal.get("stop_condition"):
         errors.append("stop condition: when the run is finished")
     return errors

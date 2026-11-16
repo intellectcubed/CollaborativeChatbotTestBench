@@ -34,8 +34,9 @@ class FakeReplay:
     def members(self):
         return MEMBERS
 
-    def send(self, sender_id, text, sent_at, live_calendar):
-        self.sent.append({"sender_id": sender_id, "text": text, "sent_at": sent_at, "live": live_calendar})
+    def send(self, sender_id, text, sent_at, live_calendar, name=None, squad=None):
+        self.sent.append({"sender_id": sender_id, "text": text, "sent_at": sent_at, "live": live_calendar,
+                          "name": name, "squad": squad})
         return {"status": "enqueued", "trace_id": f"t{len(self.sent)}"}
 
     def trace(self, trace_id):

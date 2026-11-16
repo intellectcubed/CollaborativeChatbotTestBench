@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal
 
-from driver.api.replay import WORKING, ReplayClient, ReplayError
+from driver.api.replay import WORKING, ReplayClient, ReplayError, model_tokens
 from driver.batches.files import NY, Batch, Message
 
 Status = Literal["pending", "sending", "waiting", "done", "not_processed", "timeout", "failed", "skipped"]
@@ -31,6 +31,7 @@ class Line:
     replies: list[dict] = field(default_factory=list)
     error: str | None = None
     touched: int = 0  # the batch version at which this row last changed
+    tokens: dict | None = None  # the model tokens this message used, once its trace is done
 
 
 class Runner:
@@ -83,6 +84,7 @@ class Runner:
             self._claim()
             ln = self.lines[self.current]
             ln.status, ln.trace_id, ln.trace_status, ln.replies, ln.error = "pending", None, None, [], None
+            ln.tokens = None
             self._touch(ln)
             self._launch([ln], once=True, live=live)
 
@@ -125,6 +127,7 @@ class Runner:
             self._touch(*self.lines)
             for ln in self.lines:
                 ln.status, ln.trace_id, ln.trace_status, ln.replies, ln.error = "pending", None, None, [], None
+                ln.tokens = None
 
     def set_checked(self, index: int, checked: bool) -> None:
         with self._lock:
@@ -204,9 +207,9 @@ class Runner:
         except ReplayError as exc:
             self._finish(ln, "failed", trace_status=trace.get("status"), error=str(exc))
             return
-        self._finish(ln, "done", trace_status=trace.get("status"), replies=replies)
+        self._finish(ln, "done", trace_status=trace.get("status"), replies=replies, tokens=model_tokens(trace))
 
-    def _finish(self, ln: Line, status: Status, trace_status=None, replies=None, error=None) -> None:
+    def _finish(self, ln: Line, status: Status, trace_status=None, replies=None, error=None, tokens=None) -> None:
         with self._lock:
             ln.status = status
             self._touch(ln)
@@ -214,6 +217,8 @@ class Runner:
                 ln.trace_status = trace_status
             if replies is not None:
                 ln.replies = replies
+            if tokens is not None:
+                ln.tokens = tokens
             ln.error = error
 
     # ---- what the page shows
@@ -240,7 +245,7 @@ class Runner:
             "display_time": m.created_at.strftime("%B %-d, %Y %-I:%M:%S %p"),
             "name": who.get("name", "unknown"), "squad": who.get("squad", ""), "member": m.member,
             "text": m.text, "checked": ln.checked, "status": ln.status,
-            "trace_id": ln.trace_id, "trace_status": ln.trace_status,
+            "trace_id": ln.trace_id, "trace_status": ln.trace_status, "tokens": ln.tokens,
             "replies": [{"kind": r.get("kind"), "text": r.get("text"), "channel": r.get("channel"),
                          "status": r.get("status"), "error": r.get("error")} for r in ln.replies],
             "error": ln.error,

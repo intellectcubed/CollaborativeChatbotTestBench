@@ -225,8 +225,13 @@ no crew 1800-0600 on this date" can be a plain check that does not need a model.
 
 The driver runs only in Docker, in its own compose project, separate from the chatbot's.
 
-- `docker compose up` starts the driver. The page is at `http://localhost:8010`. Port 8010 is used because the
+- `docker compose up` starts the driver's API on `http://localhost:8010`. Port 8010 is used because the
   chatbot's ingest already uses 8000 on the host.
+- **The page is React** (`ui/`, built with Vite). Two ways to see it:
+  - **Development:** run `npm run dev` in `ui/` and open `http://localhost:5173`. Its `/api` calls go to the driver on
+    8010. Edits show on save.
+  - **Built:** `docker compose build` builds the page into the image, and the driver serves it at
+    `http://localhost:8010`. Outside Docker, `npm run build` in `ui/` writes `ui/dist`, which the driver serves.
 - **Development:** `./src` is mounted into the container, and the server reloads when a file changes. A code edit
   shows on the next request, with no rebuild.
 - **Rebuild** (`docker compose up -d --build`) only when `pyproject.toml` changes, because that changes the installed
