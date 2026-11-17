@@ -1,39 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { messageTime } from "./dates.js";
-
-// The trace ID, shortened, with a button that copies the whole ID.
-function TraceId({ id }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(id);
-      ok = true;
-    } catch (e) {
-      // the clipboard API can be refused (no focus, no permission): fall back to a hidden text box
-      const box = document.createElement("textarea");
-      box.value = id;
-      box.style.position = "fixed";
-      box.style.opacity = "0";
-      document.body.appendChild(box);
-      box.select();
-      try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
-      box.remove();
-    }
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1000);
-    }
-  }
-  return (
-    <span className="traceid">
-      trace {String(id).slice(0, 8)}
-      <button className="copy" onClick={copy} title="Copy the full trace ID" aria-label="Copy trace ID">
-        {copied ? "Copied" : "⧉"}
-      </button>
-    </span>
-  );
-}
+import TraceId from "../../components/TraceId.jsx";
 
 // The chatbot's model use for one message, from its trace: input and output tokens over its model calls.
 function Tokens({ t }) {
