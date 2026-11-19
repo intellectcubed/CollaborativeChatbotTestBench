@@ -1,13 +1,14 @@
 import Panel from "./Panel.jsx";
 
 // The top banner: the title, the global Live Calendar checkbox, and the token totals and budget.
-export default function Banner({ live, setLiveSetting, liveError, usage, chatTokens, resetUsage, usageError, blocked }) {
+export default function Banner({ live, setLiveSetting, liveError, usage, chatTokens, resetUsage, usageError, blocked, theme, toggleTheme }) {
   const money = v => (v == null ? "" : `$${Number(v).toFixed(2)}`);
   const n = v => Number(v || 0).toLocaleString();
   return (
     <header className="banner">
       <div className="title">
         <h1>Chatbot Testing Workbench</h1>
+        <button type="button" className="theme" onClick={toggleTheme}>{theme === "light" ? "Dark theme" : "Light theme"}</button>
         <label className="live">
           <input type="checkbox" checked={live} disabled={blocked}
             onChange={e => setLiveSetting(e.target.checked)} />

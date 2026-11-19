@@ -5,6 +5,7 @@ import BatchTab from "./tabs/BatchTab.jsx";
 import BotTab from "./tabs/BotTab.jsx";
 import CreateTab from "./tabs/CreateTab.jsx";
 import { useSettings } from "./hooks/useSettings.js";
+import { useTheme } from "./hooks/useTheme.js";
 import { useUsage } from "./hooks/useUsage.js";
 import { useSessionTokens } from "./hooks/useSessionTokens.js";
 import { useBatch } from "./hooks/useBatch.js";
@@ -22,6 +23,7 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState("batch");
   const settings = useSettings();
+  const theme = useTheme();
   const usage = useUsage();
   const bot = useBot();
   const manual = useManual();
@@ -46,7 +48,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Banner live={settings.live} setLiveSetting={settings.setLiveSetting} liveError={settings.error}
+      <Banner theme={theme.theme} toggleTheme={theme.toggleTheme} live={settings.live} setLiveSetting={settings.setLiveSetting} liveError={settings.error}
         usage={usage.usage} chatTokens={tokens.totals} resetUsage={resetUsage} usageError={usage.error}
         blocked={batch.blocked || botTabBusy} />
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
