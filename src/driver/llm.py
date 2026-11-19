@@ -43,23 +43,41 @@ def cost_of(usage: dict, model: str, prices: dict) -> float:
 
 
 class Budget:
-    """Money spent across all runs, kept in a file so a restart does not reset it."""
+    """Money spent across all runs, and the tokens those calls used. Kept in a file so a restart does not reset it.
+
+    Resetting the token count does not change the money spent: the cap is a safety limit, not a counter.
+    """
 
     def __init__(self, cap_usd: float, path: Path) -> None:
         self.cap = cap_usd
         self.path = path
         self._lock = threading.Lock()
-        self.spent = float(json.loads(path.read_text())["spent_usd"]) if path.exists() else 0.0
+        data = json.loads(path.read_text()) if path.exists() else {}
+        self.spent = float(data.get("spent_usd", 0.0))
+        self.tokens_in = int(data.get("tokens_in", 0))
+        self.tokens_out = int(data.get("tokens_out", 0))
 
     def check(self) -> None:
         if self.spent >= self.cap:
             raise BudgetExceeded(f"budget reached: ${self.spent:.2f} of ${self.cap:.2f} spent")
 
-    def add(self, usd: float) -> None:
+    def add(self, usd: float, tokens_in: int = 0, tokens_out: int = 0) -> None:
         with self._lock:
             self.spent += usd
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps({"spent_usd": round(self.spent, 6)}))
+            self.tokens_in += tokens_in
+            self.tokens_out += tokens_out
+            self._save()
+
+    def reset_tokens(self) -> None:
+        with self._lock:
+            self.tokens_in = 0
+            self.tokens_out = 0
+            self._save()
+
+    def _save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps({"spent_usd": round(self.spent, 6), "tokens_in": self.tokens_in,
+                                         "tokens_out": self.tokens_out}))
 
 
 def _api_error(resp: httpx.Response) -> str:
@@ -101,8 +119,9 @@ class LlmClient:
             log.warning("model %s refused: HTTP %s: %s", model, resp.status_code, detail)
             raise LlmError(f"model call refused: HTTP {resp.status_code}: {detail}")
         data = resp.json()
-        cost = cost_of(data.get("usage", {}), model, self.prices)
-        self.budget.add(cost)
+        usage = data.get("usage", {})
+        cost = cost_of(usage, model, self.prices)
+        self.budget.add(cost, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0)))
         log.info("model %s: stop=%s in=%s out=%s cost=$%.5f", model, data.get("stop_reason"),
                  data.get("usage", {}).get("input_tokens"), data.get("usage", {}).get("output_tokens"), cost)
         return {"content": data.get("content", []), "stop_reason": data.get("stop_reason"),

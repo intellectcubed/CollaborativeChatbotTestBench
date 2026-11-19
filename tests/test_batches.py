@@ -264,3 +264,15 @@ def test_run_all_with_a_filter_runs_only_the_days_shown():
     with pytest.raises(RuntimeError):  # nothing in the filter: refused, nothing sent
         r2.start("all", start=date(2026, 3, 20))
     assert r2_client.sent == []
+
+
+def test_model_tokens_are_summed_over_the_llm_steps_of_one_trace():
+    from driver.batches.runner import model_tokens
+    trace = {"steps": [
+        {"name": "inbound", "output": {"text_length": 10}},
+        {"name": "llm:intent", "output": {"input_tokens": 4507, "output_tokens": 134}},
+        {"name": "llm:tier1", "output": {"input_tokens": 3941, "output_tokens": 176}},
+        {"name": "history", "output": {"text": "x"}},
+    ]}
+    assert model_tokens(trace) == {"input": 8448, "output": 310, "calls": 2}
+    assert model_tokens({"steps": []}) == {"input": 0, "output": 0, "calls": 0}

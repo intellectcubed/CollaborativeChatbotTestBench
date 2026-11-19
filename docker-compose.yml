@@ -12,6 +12,7 @@ services:
     environment:
       REPLAY_URL: ${REPLAY_URL:-http://host.docker.internal:8001}
       CALENDAR_TEST_URL: ${CALENDAR_TEST_URL:-http://host.docker.internal:7007}
+      ROSTER_CSV: /app/roster/groupme_87780377_roster.csv   # the chat's roster: real names, sender ids, squads
     extra_hosts:
       - "host.docker.internal:host-gateway"   # reach the chatbot's replay tool and test calendar on this machine
     volumes:
@@ -21,4 +22,5 @@ services:
       - ./runs:/app/runs                      # run output
       - ./prompts:/app/prompts                # bot and judge prompts (edit and they apply on the next run)
       - ./config:/app/config                  # model prices (config/model_prices.json)
+      - ${ROSTER_DIR:-../CollaborativeAIChatbot/data}:/app/roster:ro   # the chatbot project's GroupMe roster (read only)
     restart: unless-stopped
